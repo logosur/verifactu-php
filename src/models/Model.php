@@ -29,12 +29,11 @@ abstract class Model
     abstract public function rules();
 
     /**
-     * Validates model properties based on rules().
-     * Returns true if all validations pass, otherwise returns an array of error messages.
-     *
+     * Core validator executing rules() with optional field exclusions.
+     * @param string[] $exclude Fields to skip during validation
      * @return true|array
      */
-    public function validate()
+    protected function performValidation(array $exclude = [])
     {
         $errors = [];
 
@@ -42,10 +41,15 @@ abstract class Model
             $properties = $rule[0];
             $validator = $rule[1];
 
-            // Permitir que $properties sea string o array
+            // Allow $properties to be string or array
             $properties = is_array($properties) ? $properties : [$properties];
 
             foreach ($properties as $property) {
+                // Skip excluded fields
+                if (in_array($property, $exclude, true)) {
+                    continue;
+                }
+
                 // Try to get value using getter method first
                 $getter = 'get' . ucfirst((string) $property);
 
@@ -102,81 +106,36 @@ abstract class Model
     }
 
     /**
-     * Validates model properties based on rules(), excluding the hash field.
-     * This is useful for validating before hash generation.
+     * Validates model properties based on rules().
      * Returns true if all validations pass, otherwise returns an array of error messages.
      *
      * @return true|array
      */
+    public function validate()
+    {
+        return $this->performValidation();
+    }
+
+    /**
+     * Validates model properties based on rules(), excluding provided fields.
+     * This is useful for partial validations (e.g., before hash generation).
+     *
+     * @param string[] $exclude
+     * @return true|array
+     */
+    public function validateExcept(array $exclude)
+    {
+        return $this->performValidation($exclude);
+    }
+
+    /**
+     * Deprecated: Use validateExcept(['hash']) instead.
+     * Kept for backward compatibility.
+     *          
+     * @return true|array
+     */
     public function validateExceptHash()
     {
-        $errors = [];
-
-        foreach ($this->rules() as $rule) {
-            $properties = $rule[0];
-            $validator = $rule[1];
-
-            // Allow $properties to be string or array
-            $properties = is_array($properties) ? $properties : [$properties];
-
-            foreach ($properties as $property) {
-                // Skip hash field validation
-                if ($property === 'hash') {
-                    continue;
-                }
-
-                // Try to get value using getter method first
-                $getter = 'get' . ucfirst((string) $property);
-
-                $value = method_exists($this, $getter) ? $this->$getter() : $this->$property ?? null;
-
-                if ($validator === 'required') {
-                    if ($value === null || $value === '' || ($value === [])) {
-                        $errors[$property][] = 'This field is required.';
-                    }
-                    continue;
-                }
-
-                if (is_callable($validator)) {
-                    $result = call_user_func($validator, $value, $this);
-
-                    if ($result !== true) {
-                        $errors[$property][] = is_string($result) ? $result : "Validation failed for $property.";
-                    }
-                } else {
-                    // Skip validation for string/integer/float validators if value is null (unless marked as required)
-                    if ($value === null && in_array($validator, ['string', 'integer', 'float', 'email'])) {
-                        continue;
-                    }
-
-                    switch ($validator) {
-                        case 'string':
-                            if (!is_string($value)) {
-                                $errors[$property][] = 'Must be a string.';
-                            }
-                            break;
-                        case 'integer':
-                            if (!is_int($value)) {
-                                $errors[$property][] = 'Must be an integer.';
-                            }
-                            break;
-                        case 'float':
-                            if (!is_float($value) && !is_int($value)) {
-                                $errors[$property][] = 'Must be a float.';
-                            }
-                            break;
-                        case 'email':
-                            if (!is_string($value) || !filter_var($value, FILTER_VALIDATE_EMAIL)) {
-                                $errors[$property][] = 'Must be a valid email address.';
-                            }
-                            break;
-                        default:
-                            $errors[$property][] = "Unknown validator: $validator";
-                    }
-                }
-            }
-        }
-
-        return $errors === [] ? true : $errors;
+        return $this->performValidation(['hash']);
     }
 }

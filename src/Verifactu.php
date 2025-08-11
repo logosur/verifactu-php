@@ -11,6 +11,7 @@ use eseperio\verifactu\models\InvoiceRecord;
 use eseperio\verifactu\models\InvoiceResponse;
 use eseperio\verifactu\models\InvoiceSubmission;
 use eseperio\verifactu\models\QueryResponse;
+use eseperio\verifactu\services\VerifactuConfig;
 use eseperio\verifactu\services\VerifactuService;
 
 class Verifactu
@@ -52,12 +53,9 @@ class Verifactu
     public const TYPE_SEAL = 'seal';
 
     /**
-     * @param $certPath string Path to the certificate file.
-     * @param $certPassword string Password for the certificate.
-     * @param $certType string Type of certificate, either 'certificate' or 'seal'.
-     * @param $environment string Environment to use, either 'production' or 'sandbox'.
+     * Creates a configured service instance (factory), instead of mutating static state.
      */
-    public static function config($certPath, $certPassword, $certType, $environment = self::ENVIRONMENT_PRODUCTION): void
+    public static function createService(string $certPath, string $certPassword, string $certType, string $environment = self::ENVIRONMENT_PRODUCTION): VerifactuService
     {
         $endpoint = match ($environment) {
             self::ENVIRONMENT_PRODUCTION => $certType === self::TYPE_SEAL ? self::URL_PRODUCTION_SEAL : self::URL_PRODUCTION,
@@ -71,48 +69,36 @@ class Verifactu
             default => throw new \InvalidArgumentException("Invalid environment: $environment")
         };
 
-        VerifactuService::config([
-            VerifactuService::CERT_PATH_KEY => $certPath,
-            VerifactuService::CERT_PASSWORD_KEY => $certPassword,
-            VerifactuService::WSDL_ENDPOINT => $endpoint,
-            VerifactuService::QR_VERIFICATION_URL => $qrValidationUrl,
-        ]);
+        $config = new VerifactuConfig($endpoint, $certPath, $certPassword, $qrValidationUrl);
+        return new VerifactuService($config);
     }
 
     /**
-     * Registers a new invoice (Alta) with AEAT via VERI*FACTU.
-     *
-     * @throws \DOMException
-     * @throws \SoapFault
+     * Deprecated static methods kept for BC; internally create a service and delegate.
      */
+    public static function config($certPath, $certPassword, $certType, $environment = self::ENVIRONMENT_PRODUCTION): void
+    {
+        // No-op to avoid breaking API; users should migrate to createService().
+        // Left intentionally empty.
+    }
+
     public static function registerInvoice(InvoiceSubmission $invoice): InvoiceResponse
     {
-        return VerifactuService::registerInvoice($invoice);
+        throw new \BadMethodCallException('Use Verifactu::createService(...)->registerInvoice($invoice) instead.');
     }
 
-    /**
-     * Cancels an invoice (Anulación) with AEAT via VERI*FACTU.
-     */
     public static function cancelInvoice(InvoiceCancellation $cancellation): InvoiceResponse
     {
-        return VerifactuService::cancelInvoice($cancellation);
+        throw new \BadMethodCallException('Use Verifactu::createService(...)->cancelInvoice($cancellation) instead.');
     }
 
-    /**
-     * Queries submitted invoices from AEAT via VERI*FACTU.
-     */
     public static function queryInvoices(InvoiceQuery $query): QueryResponse
     {
-        return VerifactuService::queryInvoices($query);
+        throw new \BadMethodCallException('Use Verifactu::createService(...)->queryInvoices($query) instead.');
     }
 
-    /**
-     * Generates a base64 QR code for the provided invoice.
-     *
-     * @return string base64-encoded PNG QR code
-     */
     public static function generateInvoiceQr(InvoiceRecord $record): string
     {
-        return VerifactuService::generateInvoiceQr($record);
+        throw new \BadMethodCallException('Use Verifactu::createService(...)->generateInvoiceQr($record) instead.');
     }
 }

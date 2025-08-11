@@ -79,16 +79,13 @@ composer require robrichards/xmlseclibs
 
 ### 1. **Configuration**
 
-Before using any service, you must configure the library with your certificate, password, certificate type, and
-environment.  
-Choose between certificate type (`certificate` or `seal`) and environment (`production` or `sandbox`) according to
-whether you'll be working in production or testing.
+Before using any service, create a configured service instance with your certificate, password, certificate type, and environment.
 
 ```php
 use eseperio\verifactu\Verifactu;
 
-// Configure the library (do this once before any operation)
-Verifactu::config(
+// Create a configured service (do this once and reuse $service)
+$service = Verifactu::createService(
     '/path/to/your-certificate.pfx', // Path to certificate
     'your-certificate-password',     // Certificate password
     Verifactu::TYPE_CERTIFICATE,     // Certificate type: TYPE_CERTIFICATE or TYPE_SEAL
@@ -96,17 +93,14 @@ Verifactu::config(
 );
 ```
 
-- Use `Verifactu::TYPE_CERTIFICATE` for a personal/company certificate, or `Verifactu::TYPE_SEAL` for a seal
-  certificate.
-- Use `Verifactu::ENVIRONMENT_PRODUCTION` for real submissions, or `Verifactu::ENVIRONMENT_SANDBOX` for AEAT
-  homologation/testing.
+- Use `Verifactu::TYPE_CERTIFICATE` for a personal/company certificate, or `Verifactu::TYPE_SEAL` for a seal certificate.
+- Use `Verifactu::ENVIRONMENT_PRODUCTION` for real submissions, or `Verifactu::ENVIRONMENT_SANDBOX` for AEAT homologation/testing.
 
 ---
 
 ### 2. **Register an Invoice (Alta)**
 
 ```php
-use eseperio\verifactu\Verifactu;
 use eseperio\verifactu\models\InvoiceSubmission;
 use eseperio\verifactu\models\InvoiceId;
 use eseperio\verifactu\models\Breakdown;
@@ -114,14 +108,12 @@ use eseperio\verifactu\models\BreakdownDetail;
 use eseperio\verifactu\models\Chaining;
 use eseperio\verifactu\models\ComputerSystem;
 use eseperio\verifactu\models\LegalPerson;
-use eseperio\verifactu\models\Recipient;
 use eseperio\verifactu\models\enums\InvoiceType;
 use eseperio\verifactu\models\enums\TaxType;
 use eseperio\verifactu\models\enums\YesNoType;
-use eseperio\verifactu\models\enums\HashType;
 use eseperio\verifactu\models\enums\OperationQualificationType;
 
-// After calling Verifactu::config(...)
+// After creating $service with Verifactu::createService(...)
 
 $invoice = new InvoiceSubmission();
 
@@ -134,34 +126,27 @@ $invoice->setInvoiceId($invoiceId);
 
 // Set basic invoice data
 $invoice->issuerName = 'Empresa Ejemplo SL';
-$invoice->invoiceType = InvoiceType::STANDARD; // Using corrected enum value
+$invoice->invoiceType = InvoiceType::STANDARD;
 $invoice->operationDescription = 'Venta de productos';
 $invoice->taxAmount = 21.00; // Total tax amount
 $invoice->totalAmount = 121.00; // Total invoice amount
-$invoice->simplifiedInvoice = YesNoType::NO; // Corrected property name
-$invoice->invoiceWithoutRecipient = YesNoType::NO; // Corrected property name
+$invoice->simplifiedInvoice = YesNoType::NO;
+$invoice->invoiceWithoutRecipient = YesNoType::NO;
 
 // Add tax breakdown (using object-oriented approach)
 $breakdown = new Breakdown();
 $detail = new BreakdownDetail();
 $detail->taxType = TaxType::IVA;
 $detail->taxRate = 21.00;
-$detail->taxableBase = 100.00; // Corrected property name
+$detail->taxableBase = 100.00;
 $detail->taxAmount = 21.00;
 $detail->operationQualification = OperationQualificationType::SUBJECT_NO_EXEMPT_NO_REVERSE;
 $breakdown->addDetail($detail);
 $invoice->setBreakdown($breakdown);
 
-// Set chaining data (using object-oriented approach)
+// Set chaining data (first in chain)
 $chaining = new Chaining();
-$chaining->firstRecord = YesNoType::YES; // Corrected property name - For the first invoice in a chain
-// Or for subsequent invoices:
-// $chaining->setPreviousInvoice([
-//     'seriesNumber' => 'FA2024/000',
-//     'issuerNif' => 'B12345678',
-//     'issueDate' => '2024-06-30',
-//     'hash' => '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
-// ]);
+$chaining->setAsFirstRecord();
 $invoice->setChaining($chaining);
 
 // Set system information (using object-oriented approach)
@@ -184,38 +169,30 @@ $invoice->setSystemInfo($computerSystem);
 
 // Set other required fields
 $invoice->recordTimestamp = '2024-07-01T12:00:00+02:00'; // Date and time with timezone
-$invoice->hashType = HashType::SHA_256;
-$invoice->hash = '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'; // Calculated hash
 
 // Optional fields
 $invoice->operationDate = '2024-07-01'; // Operation date
 $invoice->externalRef = 'REF123'; // External reference
-$invoice->simplifiedInvoice = YesNoType::NO; // Not a simplified invoice
-$invoice->invoiceWithoutRecipient = YesNoType::NO; // Has identified recipient
 
 // Add recipients (using object-oriented approach)
-$recipient = new Recipient();
-$recipientPerson = new LegalPerson();
-$recipientPerson->name = 'Cliente Ejemplo SL';
-$recipientPerson->nif = 'A98765432';
-$recipient->setLegalPerson($recipientPerson);
-$invoice->setRecipient($recipient);
+$recipient = new LegalPerson();
+$recipient->name = 'Cliente Ejemplo SL';
+$recipient->nif = 'A98765432';
+$invoice->addRecipient($recipient);
 
-// Validate the invoice before submission
-$validationResult = $invoice->validate();
+// Optionally validate before submission (excluding hash, which the service will generate)
+$validationResult = $invoice->validateExcept(['hash']);
 if ($validationResult !== true) {
-    // Handle validation errors
     print_r($validationResult);
     exit;
 }
 
-// Submit the invoice
-$response = Verifactu::registerInvoice($invoice);
+// Submit the invoice (the service will generate hash, sign and send)
+$response = $service->registerInvoice($invoice);
 
 if ($response->submissionStatus === \eseperio\verifactu\models\InvoiceResponse::STATUS_OK) {
     echo "AEAT CSV: " . $response->csv;
 } else {
-    // Check error codes and messages in $response->lineResponses
     foreach ($response->lineResponses as $lineResponse) {
         echo "Error code: " . $lineResponse->errorCode . " - " . $lineResponse->errorMessage . "\n";
     }
@@ -227,17 +204,15 @@ if ($response->submissionStatus === \eseperio\verifactu\models\InvoiceResponse::
 ### 3. **Cancel an Invoice (Anulación)**
 
 ```php
-use eseperio\verifactu\Verifactu;
 use eseperio\verifactu\models\InvoiceCancellation;
 use eseperio\verifactu\models\InvoiceId;
 use eseperio\verifactu\models\Chaining;
 use eseperio\verifactu\models\ComputerSystem;
 use eseperio\verifactu\models\LegalPerson;
 use eseperio\verifactu\models\enums\YesNoType;
-use eseperio\verifactu\models\enums\HashType;
 use eseperio\verifactu\models\enums\GeneratorType;
 
-// After calling Verifactu::config(...)
+// After creating $service with Verifactu::createService(...)
 
 $cancellation = new InvoiceCancellation();
 
@@ -248,14 +223,13 @@ $invoiceId->seriesNumber = 'FA2024/001';
 $invoiceId->issueDate = '2024-07-01';
 $cancellation->setInvoiceId($invoiceId);
 
-// Set chaining data (using object-oriented approach)
+// Set chaining data (previous record in chain)
 $chaining = new Chaining();
-// For subsequent invoices in a chain:
 $chaining->setPreviousInvoice([
     'seriesNumber' => 'FA2024/000',
     'issuerNif' => 'B12345678',
     'issueDate' => '2024-06-30',
-    'hash' => '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+    'hash' => '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
 ]);
 $cancellation->setChaining($chaining);
 
@@ -278,31 +252,27 @@ $computerSystem->setProviderId($provider);
 $cancellation->setSystemInfo($computerSystem);
 
 // Set other required fields
-$cancellation->recordTimestamp = '2024-07-01T12:00:00+02:00'; // Date and time with timezone
-$cancellation->hashType = HashType::SHA_256;
-$cancellation->hash = '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'; // Calculated hash
+$cancellation->recordTimestamp = '2024-07-01T12:00:00+02:00';
 
 // Optional fields
-$cancellation->noPreviousRecord = YesNoType::NO; // Not a cancellation without previous record
-$cancellation->previousRejection = YesNoType::NO; // Not a cancellation due to previous rejection
-$cancellation->generator = GeneratorType::ISSUER; // Generated by the issuer
-$cancellation->externalRef = 'REF-CANCEL-123'; // External reference
+$cancellation->noPreviousRecord = YesNoType::NO;
+$cancellation->previousRejection = YesNoType::NO;
+$cancellation->generator = GeneratorType::ISSUER;
+$cancellation->externalRef = 'REF-CANCEL-123';
 
-// Validate the cancellation before submission
-$validationResult = $cancellation->validate();
+// Optionally validate before submission (excluding hash)
+$validationResult = $cancellation->validateExcept(['hash']);
 if ($validationResult !== true) {
-    // Handle validation errors
     print_r($validationResult);
     exit;
 }
 
 // Submit the cancellation
-$response = Verifactu::cancelInvoice($cancellation);
+$response = $service->cancelInvoice($cancellation);
 
 if ($response->submissionStatus === \eseperio\verifactu\models\InvoiceResponse::STATUS_OK) {
     echo "AEAT CSV: " . $response->csv;
 } else {
-    // Check error codes and messages in $response->lineResponses
     foreach ($response->lineResponses as $lineResponse) {
         echo "Error code: " . $lineResponse->errorCode . " - " . $lineResponse->errorMessage . "\n";
     }
@@ -314,48 +284,25 @@ if ($response->submissionStatus === \eseperio\verifactu\models\InvoiceResponse::
 ### 4. **Query Submitted Invoices**
 
 ```php
-use eseperio\verifactu\Verifactu;
 use eseperio\verifactu\models\InvoiceQuery;
-use eseperio\verifactu\models\ComputerSystem;
-use eseperio\verifactu\models\LegalPerson;
-use eseperio\verifactu\models\enums\YesNoType;
-use eseperio\verifactu\models\enums\PeriodType;
 
-// After calling Verifactu::config(...)
+// After creating $service with Verifactu::createService(...)
 
 $query = new InvoiceQuery();
 
 // Required fields
 $query->year = '2024';
-$query->period = PeriodType::JULY; // Using enum instead of string
+$query->period = '07'; // July (use AEAT period code as string)
 
 // Optional filters
 $query->seriesNumber = 'FA2024'; // Filter by invoice series
 $query->issueDate = '2024-07-01'; // Filter by specific date
 
-// Set counterparty (using object-oriented approach)
-$counterparty = new LegalPerson();
-$counterparty->name = 'Cliente Ejemplo SL';
-$counterparty->nif = 'A12345678';
-$query->setCounterparty($counterparty);
+// Set counterparty (NIF and optional name)
+$query->setCounterparty('A12345678', 'Cliente Ejemplo SL');
 
-// Set system information (using object-oriented approach)
-$computerSystem = new ComputerSystem();
-$computerSystem->systemName = 'ERP Company';
-$computerSystem->version = '1.0';
-$computerSystem->providerName = 'Software Provider';
-$computerSystem->systemId = '01';
-$computerSystem->installationNumber = '1';
-$computerSystem->onlyVerifactu = YesNoType::YES;
-$computerSystem->multipleObligations = YesNoType::NO;
-
-// Set provider information
-$provider = new LegalPerson();
-$provider->name = 'Software Provider SL';
-$provider->nif = 'B87654321';
-$computerSystem->setProviderId($provider);
-
-$query->setSystemInfo($computerSystem);
+// Set minimal system information
+$query->setSystemInfo('ERP Company', '1.0');
 
 // Additional optional fields
 $query->externalRef = 'REF-QUERY-123'; // External reference
@@ -364,33 +311,18 @@ $query->setPaginationKey(1, 50); // Page number and records per page
 // Validate the query before submission
 $validationResult = $query->validate();
 if ($validationResult !== true) {
-    // Handle validation errors
     print_r($validationResult);
     exit;
 }
 
 // Submit the query
-$result = Verifactu::queryInvoices($query);
+$result = $service->queryInvoices($query);
 
 // Process the results
-if ($result->queryStatus === \eseperio\verifactu\models\QueryResponse::STATUS_OK) {
+if ($result->queryStatus === \\eseperio\\verifactu\\models\\QueryResponse::STATUS_OK) {
     echo "Total records found: " . count($result->foundRecords) . "\n";
-
-    foreach ($result->foundRecords as $record) {
-        echo "Invoice: " . $record->seriesNumber . " - Date: " . $record->issueDate . "\n";
-        echo "Issuer: " . $record->issuerName . " (" . $record->issuerNif . ")\n";
-        echo "Amount: " . $record->totalAmount . " EUR\n";
-        echo "CSV: " . $record->csv . "\n";
-        echo "Status: " . $record->status . "\n";
-        echo "-------------------\n";
-    }
-
-    // Check if there are more pages
-    if ($result->hasMoreRecords === YesNoType::YES) {
-        echo "There are more records available. Use pagination to retrieve them.\n";
-    }
+    // ... process records ...
 } else {
-    // Handle query errors
     foreach ($result->errors as $error) {
         echo "Error code: " . $error->code . " - " . $error->message . "\n";
     }
@@ -401,93 +333,35 @@ if ($result->queryStatus === \eseperio\verifactu\models\QueryResponse::STATUS_OK
 
 ### 5. **Generate QR for an Invoice**
 
-The library provides flexible options for generating QR codes for invoices, supporting different renderers, resolutions,
-and output formats.
+The library provides flexible options for generating QR codes for invoices, supporting different renderers, resolutions, and output formats.
 
 ```php
-use eseperio\verifactu\Verifactu;
 use eseperio\verifactu\services\QrGeneratorService;
-use eseperio\verifactu\models\InvoiceRecord;
 use eseperio\verifactu\models\InvoiceSubmission;
 
 // Assuming you already have a valid InvoiceSubmission or InvoiceCancellation object
-// that has been submitted to AEAT and has a CSV
+// The QR encodes the verification URL (nif, num, fecha, huella)
 
 // Basic usage (returns raw image data using GD renderer)
-$qrData = Verifactu::generateInvoiceQr($invoice);
+$qrData = $service->generateInvoiceQr($invoice);
 
 // Save QR directly to a file
-$filePath = Verifactu::generateInvoiceQr(
+$filePath = $service->generateInvoiceQr(
     $invoice,
     QrGeneratorService::DESTINATION_FILE, // Save to file instead of returning data
     300, // Resolution (size in pixels)
     QrGeneratorService::RENDERER_GD // Use GD library (default)
 );
+
 echo "QR code saved to: $filePath";
 
 // Generate SVG format
-$svgData = Verifactu::generateInvoiceQr(
+$svgData = $service->generateInvoiceQr(
     $invoice,
     QrGeneratorService::DESTINATION_STRING,
     300,
     QrGeneratorService::RENDERER_SVG
 );
-// Use SVG data directly in HTML
-echo '<div>' . $svgData . '</div>';
-
-// Generate using Imagick (if available on your server)
-$pngData = Verifactu::generateInvoiceQr(
-    $invoice,
-    QrGeneratorService::DESTINATION_STRING,
-    300,
-    QrGeneratorService::RENDERER_IMAGICK
-);
-
-// Convert to base64 for embedding in HTML or PDF
-$base64Data = base64_encode($pngData);
-echo '<img src="data:image/png;base64,' . $base64Data . '" alt="QR Code" />';
-
-// Higher resolution QR code
-$highResQr = Verifactu::generateInvoiceQr(
-    $invoice,
-    QrGeneratorService::DESTINATION_STRING,
-    600 // Higher resolution
-);
-
-// Complete example with a new invoice
-$invoice = new InvoiceSubmission();
-// ... set all required properties as shown in the Register an Invoice example ...
-
-// First submit the invoice to get a CSV
-$response = Verifactu::registerInvoice($invoice);
-
-if ($response->submissionStatus === \eseperio\verifactu\models\InvoiceResponse::STATUS_OK) {
-    // Now we can generate a QR code for the invoice
-    // The QR code will include the CSV from the response
-    $invoice->csv = $response->csv;
-
-    // Generate QR code as PNG and save to file
-    $qrFilePath = Verifactu::generateInvoiceQr(
-        $invoice,
-        QrGeneratorService::DESTINATION_FILE,
-        300,
-        QrGeneratorService::RENDERER_GD
-    );
-
-    echo "Invoice registered successfully with CSV: " . $response->csv . "\n";
-    echo "QR code saved to: " . $qrFilePath . "\n";
-
-    // Generate QR code as base64 for embedding in HTML
-    $qrData = Verifactu::generateInvoiceQr(
-        $invoice,
-        QrGeneratorService::DESTINATION_STRING,
-        300,
-        QrGeneratorService::RENDERER_GD
-    );
-    $base64QrCode = base64_encode($qrData);
-
-    echo '<img src="data:image/png;base64,' . $base64QrCode . '" alt="Invoice QR Code" />';
-}
 ```
 
 #### Available Options:
@@ -502,7 +376,6 @@ if ($response->submissionStatus === \eseperio\verifactu\models\InvoiceResponse::
     - `QrGeneratorService::RENDERER_SVG`: Generates SVG format (vector-based)
 
 - **Resolution**: Size in pixels (default: 300)
-```
 
 ---
 
@@ -528,44 +401,35 @@ The same flow applies to cancellations and events, changing only the data model 
 
 ## Configuration
 
-The library is configured using the `Verifactu::config()` method, which accepts the following parameters:
+The library is configured by creating a `VerifactuService` via the `Verifactu::createService()` factory, which selects the appropriate endpoints and QR verification URL based on certificate type and environment:
 
 ```php
-Verifactu::config(
-    string $certPath,           // Path to your digital certificate (PFX or P12 format)
-    string $certPassword,       // Password for the certificate file
-    string $certType,           // Type of certificate: Verifactu::TYPE_CERTIFICATE or Verifactu::TYPE_SEAL
-    string $environment = Verifactu::ENVIRONMENT_PRODUCTION // Environment: Verifactu::ENVIRONMENT_PRODUCTION or Verifactu::ENVIRONMENT_SANDBOX
+use eseperio\verifactu\Verifactu;
+
+$service = Verifactu::createService(
+    '/path/to/your-certificate.p12',
+    'your-certificate-password',
+    Verifactu::TYPE_CERTIFICATE, // or Verifactu::TYPE_SEAL
+    Verifactu::ENVIRONMENT_SANDBOX // or Verifactu::ENVIRONMENT_PRODUCTION
 );
 ```
 
-### Certificate Types
-
-* `Verifactu::TYPE_CERTIFICATE`: For a personal or company certificate
-* `Verifactu::TYPE_SEAL`: For a seal certificate
-
-### Environments
-
-* `Verifactu::ENVIRONMENT_PRODUCTION`: For real submissions to AEAT
-* `Verifactu::ENVIRONMENT_SANDBOX`: For testing in AEAT's homologation environment
-
-The library automatically selects the appropriate SOAP endpoints and QR verification URLs based on the certificate type
-and environment.
-
 ### Advanced Configuration
 
-If you need more control over the configuration, you can use the `VerifactuService::config()` method directly:
+If you need more control, you can build the configuration manually:
 
 ```php
+use eseperio\verifactu\services\VerifactuConfig;
 use eseperio\verifactu\services\VerifactuService;
 
-VerifactuService::config([
-    VerifactuService::CERT_PATH_KEY => '/path/to/your-certificate.p12',
-    VerifactuService::CERT_PASSWORD_KEY => 'your-certificate-password',
-    VerifactuService::WSDL_ENDPOINT => 'https://custom-endpoint.example.com',
-    VerifactuService::QR_VERIFICATION_URL => 'https://custom-qr-verification.example.com',
-    // Add any other custom configuration options here
-]);
+$config = new VerifactuConfig(
+    'https://custom-endpoint.example.com/wsdl', // Custom WSDL URL
+    '/path/to/your-certificate.p12',            // Certificate path
+    'your-certificate-password',                // Certificate password
+    'https://custom-qr-verification.example.com'// Custom QR base URL
+);
+
+$service = new VerifactuService($config);
 ```
 
 ---
@@ -605,7 +469,6 @@ The library uses enum classes for type-safe constants:
 * **HashType:** Hash algorithm types (SHA-256)
 * **InvoiceType:** Invoice types (F1, F2, R1, R2, etc.)
 * **OperationQualificationType:** Tax operation qualifications
-* **PeriodType:** Month or quarter periods
 * **RectificationType:** Types of invoice rectifications
 * **YesNoType:** Yes/No values for boolean fields
 * **GeneratorType:** Invoice generator types
@@ -656,66 +519,42 @@ more advanced use cases.
 
 ### Specialized Services
 
-* **HashGeneratorService:** Implements AEAT-compliant SHA-256 hash calculation for invoices.
+- **HashGeneratorService:** Implements AEAT-compliant SHA-256 hash calculation for invoices.
   ```php
   use eseperio\verifactu\services\HashGeneratorService;
-
+  
   // Calculate hash for an invoice
-  $hash = HashGeneratorService::generateHash($invoice);
+  $hash = HashGeneratorService::generate($invoice);
   $invoice->hash = $hash;
   ```
 
-* **XmlSignerService:** Digitally signs XML blocks using XAdES Enveloped and your certificate.
+- **XmlSignerService:** Digitally signs XML blocks using XAdES Enveloped and your certificate.
   ```php
   use eseperio\verifactu\services\XmlSignerService;
-
+  
   // Sign an XML document
   $signedXml = XmlSignerService::signXml($xmlString, $certPath, $certPassword);
   ```
 
-* **SoapClientFactoryService:** Configures and creates secure SOAP clients with certificates.
+- **SoapClientFactoryService:** Configures and creates secure SOAP clients with certificates.
   ```php
   use eseperio\verifactu\services\SoapClientFactoryService;
-
+  
   // Create a SOAP client with certificate authentication
-  $client = SoapClientFactoryService::createClient($wsdlUrl, $certPath, $certPassword);
+  $client = SoapClientFactoryService::createSoapClient($wsdlUrl, $certPath, $certPassword);
   ```
 
-* **QrGeneratorService:** Generates AEAT-compliant QR codes for invoices in various formats.
+- **QrGeneratorService:** Generates AEAT-compliant QR codes for invoices in various formats.
   ```php
   use eseperio\verifactu\services\QrGeneratorService;
-
+  
   // Generate a QR code for an invoice
-  $qrCode = QrGeneratorService::generateQr(
+  $qrCode = $service->generateInvoiceQr(
       $invoice,
       QrGeneratorService::DESTINATION_STRING,
       300,
       QrGeneratorService::RENDERER_GD
   );
-  ```
-
-* **ResponseParserService:** Converts AEAT XML/SOAP responses to model objects.
-  ```php
-  use eseperio\verifactu\services\ResponseParserService;
-
-  // Parse a SOAP response into an InvoiceResponse object
-  $response = ResponseParserService::parseInvoiceResponse($soapResponse);
-  ```
-
-* **EventDispatcherService:** Handles event submission to AEAT endpoints.
-  ```php
-  use eseperio\verifactu\services\EventDispatcherService;
-
-  // Submit an event to AEAT
-  $response = EventDispatcherService::submitEvent($eventRecord);
-  ```
-
-* **CertificateManagerService:** Manages certificate and private key loading and validation.
-  ```php
-  use eseperio\verifactu\services\CertificateManagerService;
-
-  // Load a certificate and check its validity
-  $certInfo = CertificateManagerService::loadCertificate($certPath, $certPassword);
   ```
 
 Each service is designed to be used independently or as part of the overall workflow orchestrated by the
@@ -749,9 +588,9 @@ if ($validationResult !== true) {
 Errors returned by AEAT in SOAP responses are parsed into structured objects:
 
 ```php
-$response = Verifactu::registerInvoice($invoice);
+$response = $service->registerInvoice($invoice);
 
-if ($response->submissionStatus !== \eseperio\verifactu\models\InvoiceResponse::STATUS_OK) {
+if ($response->submissionStatus !== \\eseperio\\verifactu\\models\\InvoiceResponse::STATUS_OK) {
     foreach ($response->lineResponses as $lineResponse) {
         echo "Error code: " . $lineResponse->errorCode . "\n";
         echo "Error message: " . $lineResponse->errorMessage . "\n";
@@ -760,26 +599,23 @@ if ($response->submissionStatus !== \eseperio\verifactu\models\InvoiceResponse::
 }
 ```
 
-All AEAT error codes are mapped to human-readable messages using the official code dictionary in
-`/src/dictionaries/ErrorRegistry.php`.
-
 ### Exception Handling
 
 The library throws exceptions for various error conditions:
 
 ```php
 try {
-    $response = Verifactu::registerInvoice($invoice);
-} catch (\InvalidArgumentException $e) {
+    $response = $service->registerInvoice($invoice);
+} catch (\\InvalidArgumentException $e) {
     // Handle invalid input parameters
     echo "Invalid argument: " . $e->getMessage();
-} catch (\RuntimeException $e) {
+} catch (\\RuntimeException $e) {
     // Handle runtime errors (file access, etc.)
     echo "Runtime error: " . $e->getMessage();
-} catch (\SoapFault $e) {
+} catch (\\SoapFault $e) {
     // Handle SOAP communication errors
     echo "SOAP error: " . $e->getMessage();
-} catch (\Exception $e) {
+} catch (\\Exception $e) {
     // Handle any other unexpected errors
     echo "Unexpected error: " . $e->getMessage();
 }

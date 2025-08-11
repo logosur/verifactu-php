@@ -48,7 +48,7 @@ class HashGeneratorService
                 'invoiceType'       => $record->invoiceType instanceof \BackedEnum ? $record->invoiceType->value : (string) $record->invoiceType,
                 'taxAmount'         => $record->taxAmount,
                 'totalAmount'       => $record->totalAmount,
-                'hash'              => $chaining && $chaining->getPreviousInvoice() ? $chaining->getPreviousInvoice()->hash : '',
+                'hash'              => $chaining?->getPreviousInvoice()?->hash ?? '',
                 'recordTimestamp'   => $record->recordTimestamp,
             ];
             // Normalize values (trim, decimals, etc.)
@@ -77,7 +77,8 @@ class HashGeneratorService
                 'issuerNif'         => $invoiceId->issuerNif,
                 'seriesNumber'      => $invoiceId->seriesNumber,
                 'issueDate'         => $invoiceId->issueDate,
-                'hash'              => $chaining && $chaining->getPreviousInvoice() ? $chaining->getPreviousInvoice()->hash : '',
+                // Use null-safe operator and null coalesce for previous hash
+                'hash'              => $chaining?->getPreviousInvoice()?->hash ?? '',
                 'recordTimestamp'   => $record->recordTimestamp,
             ];
             $parts = [

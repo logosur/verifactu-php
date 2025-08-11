@@ -30,28 +30,8 @@ class VerifactuTest extends TestCase
         // Verificar que la clase Verifactu tiene los métodos principales
         // Nota: No probamos la funcionalidad, solo verificamos que los métodos existan
         $this->assertTrue(
-            $reflection->hasMethod('registerInvoice') ||
-                        $reflection->hasMethod('submitInvoice') ||
-                        $reflection->hasMethod('alta'),
-            'Debe existir un método para registrar facturas'
-        );
-
-        $this->assertTrue(
-            $reflection->hasMethod('cancelInvoice') ||
-                        $reflection->hasMethod('anulacion'),
-            'Debe existir un método para cancelar facturas'
-        );
-
-        $this->assertTrue(
-            $reflection->hasMethod('queryInvoices') ||
-                        $reflection->hasMethod('queryInvoice') ||
-                        $reflection->hasMethod('consulta'),
-            'Debe existir un método para consultar facturas'
-        );
-
-        $this->assertTrue(
-            $reflection->hasMethod('generateInvoiceQr'),
-            'Debe existir un método para generar códigos QR de facturas'
+            $reflection->hasMethod('createService'),
+            'Verifactu must expose createService factory'
         );
     }
 

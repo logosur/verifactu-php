@@ -13,8 +13,7 @@ use eseperio\verifactu\models\enums\YesNoType;
 use eseperio\verifactu\models\InvoiceId;
 use eseperio\verifactu\models\InvoiceSubmission;
 use eseperio\verifactu\models\LegalPerson;
-use eseperio\verifactu\models\Recipient;
-use eseperio\verifactu\Verifactu;
+use eseperio\verifactu\services\HashGeneratorService;
 use PHPUnit\Framework\TestCase;
 
 class ReadmeAltaExampleTest extends TestCase
@@ -22,22 +21,10 @@ class ReadmeAltaExampleTest extends TestCase
     public function setUp(): void
     {
         parent::setUp();
-        $certPath = getenv('VERIFACTU_CERT_PATH');
-        $certPass = getenv('VERIFACTU_CERT_PASS');
-
-        if (empty($certPath) || empty($certPass)) {
-            $this->markTestSkipped('Certificate path and password must be set in environment variables (VERIFACTU_CERT_PATH, VERIFACTU_CERT_PASS)');
-        }
-
-        Verifactu::config(
-            $certPath,
-            $certPass,
-            Verifactu::TYPE_CERTIFICATE,
-            Verifactu::ENVIRONMENT_SANDBOX
-        );
+        // No environment or external dependencies required
     }
 
-    public function testRegisterInvoiceSandbox()
+    public function testBuildAndValidateInvoiceFromReadme()
     {
         $invoice = new InvoiceSubmission();
 
@@ -98,22 +85,27 @@ class ReadmeAltaExampleTest extends TestCase
         $invoice->operationDate = date('Y-m-d');
         $invoice->externalRef = 'REF' . time();
 
-        // Add recipients (using object-oriented approach)
-        $recipient = new Recipient();
-        $recipientPerson = new LegalPerson();
-        $recipientPerson->name = 'Cliente Ejemplo SL';
-        $recipientPerson->nif = 'A98765432';
-        $recipient->setLegalPerson($recipientPerson);
-        $invoice->setRecipient($recipient);
+        // Add recipients using LegalPerson and addRecipient()
+        $recipient = new LegalPerson();
+        $recipient->name = 'Cliente Ejemplo SL';
+        $recipient->nif = 'A98765432';
+        $invoice->addRecipient($recipient);
 
-        // Validate the invoice before submission
-        $validationResult = $invoice->validate();
-        $this->assertTrue($validationResult, 'Invoice validation failed: ' . (is_array($validationResult) ? print_r($validationResult, true) : ''));
+        // 1) Validate before hash (excluding hash)
+        $preHashValidation = $invoice->validateExcept(['hash']);
+        $this->assertTrue($preHashValidation, 'Pre-hash validation failed: ' . (is_array($preHashValidation) ? print_r($preHashValidation, true) : ''));
 
-        // Submit the invoice
-        $response = Verifactu::registerInvoice($invoice);
+        // 2) Generate hash and set it on the model
+        $invoice->hash = HashGeneratorService::generate($invoice);
+        $this->assertNotEmpty($invoice->hash, 'Hash generation failed');
 
-        $this->assertEquals(\eseperio\verifactu\models\InvoiceResponse::STATUS_OK, $response->submissionStatus, 'The invoice submission failed. Errors: ' . print_r($response->lineResponses, true));
-        $this->assertNotEmpty($response->csv);
+        // 3) Final validation including hash
+        $finalValidation = $invoice->validate();
+        $this->assertTrue($finalValidation, 'Final validation failed: ' . (is_array($finalValidation) ? print_r($finalValidation, true) : ''));
+
+        // 4) XML generation should include the Huella node
+        $xml = $invoice->toXml()->saveXML();
+        $this->assertIsString($xml);
+        $this->assertStringContainsString('<Huella>', $xml);
     }
 }

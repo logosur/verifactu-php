@@ -73,7 +73,7 @@ class ResponseParserService
 
             // Map AEAT error codes to human-readable messages
             if (isset($line['CodigoErrorRegistro'])) {
-                $line['ErrorDescription'] = ErrorRegistry::getErrorMessage($line['CodigoErrorRegistro']);
+                $line['ErrorDescription'] = ErrorRegistry::getDescription($line['CodigoErrorRegistro']);
             }
             $model->lineResponses[] = $line;
         }
